@@ -3,6 +3,7 @@ import time
 import random
 import uuid
 from datetime import datetime, timezone, timedelta
+from zoneinfo import ZoneInfo
 
 def pump_live_data():
     client = pymongo.MongoClient("mongodb://localhost:27017/")
@@ -29,8 +30,8 @@ def pump_live_data():
 
     try:
         while True:
-            # FIX: Shift UTC to Sri Lanka Standard Time (+5:30) so the engine knows it's daytime!
-            now = datetime.now(timezone.utc) + timedelta(hours=5, minutes=30)
+            IST = ZoneInfo("Asia/Colombo")
+            now = datetime.now(IST)
             
             action_type = random.choice(actions)
             emp_id = random.choice(emp_ids)
@@ -51,10 +52,16 @@ def pump_live_data():
                 
                 # 80% of the time, use a known vendor. 
                 # 20% of the time, create a BRAND NEW vendor to trigger a "Yellow Flag" (+0.4 Risk)
-                if random.random() < 0.80:
+                if random.random() < 0.85:
                     chosen_vendor = random.choice(safe_vendors)
                 else:
-                    chosen_vendor = f"Local_Supplier_{random.randint(1000, 9999)} Ltd"
+                    # Occasionally inject slightly suspicious vendors
+                    vendor_types = [
+                        f"Local_Supplier_{random.randint(1000, 9999)} Ltd",
+                        f"Offshore Holdings {random.randint(100, 999)}",  # Triggers higher risk
+                        f"QuickCash Services {random.randint(10, 99)}"
+                    ]
+                    chosen_vendor = random.choice(vendor_types)
 
                 action["relatedTransaction"] = {
                     "transactionId": f"TXN_{uuid.uuid4().hex[:6]}",

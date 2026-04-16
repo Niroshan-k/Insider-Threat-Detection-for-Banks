@@ -3,6 +3,7 @@ import random
 from datetime import datetime, timedelta, timezone
 import uuid
 from faker import Faker
+from zoneinfo import ZoneInfo
 
 fake = Faker()
 
@@ -40,7 +41,8 @@ def generate_simulation_data():
 
     print("👥 Onboarding 500 normal customers...")
     # FIX: Use Timezone Aware UTC
-    base_time = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+    IST = ZoneInfo("Asia/Colombo")
+    base_time = datetime.now(IST)
     start_of_week = base_time - timedelta(days=base_time.weekday() + 7) 
     
     customers = []

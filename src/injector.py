@@ -3,6 +3,7 @@ import pymongo
 from datetime import datetime, timezone, timedelta
 import uuid
 import time
+from zoneinfo import ZoneInfo
 
 # --- PAGE CONFIG ---
 st.set_page_config(page_title="Red Team Console", page_icon="💉", layout="wide")
@@ -47,7 +48,8 @@ with st.container(border=True):
 
 # --- EXECUTION LOGIC & UI ---
 if execute:
-    now = datetime.now(timezone.utc) + timedelta(hours=5, minutes=30)
+    IST = ZoneInfo("Asia/Colombo")
+    now = datetime.now(IST)
     
     hacker_ip = f"10.99.{now.minute}.{now.second}" 
     unique_hash = uuid.uuid4().hex[:4]
@@ -118,4 +120,23 @@ if execute:
             st.caption("Executing high-risk transaction from identical IP.")
             st.json(strike_payload)
             
-        st.info("👉 Check the SOC Terminal. The engine should have linked these two events instantly.")
+        st.markdown("""
+        <div style="
+            background-color:#003300;
+            color:#00FF00;
+            padding:15px;
+            border:3px solid #00FF00;
+            text-align:center;
+            font-size:18px;
+            font-weight:bold;
+            animation: blinker 1.5s linear infinite;
+        ">
+        ✅ PAYLOAD DELIVERED :: MONITORING SOC TERMINAL FOR DETECTION
+        </div>
+
+        <style>
+        @keyframes blinker {
+            50% { opacity: 0.5; }
+        }
+        </style>
+        """, unsafe_allow_html=True)

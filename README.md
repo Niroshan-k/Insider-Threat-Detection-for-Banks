@@ -41,7 +41,6 @@ A separate, offensive cybersecurity console used to execute combination strikes 
 
 ![Attack Console](images/attack_console.png)
 
----
 
 ## The Scoring Engine (src/engine/rules.py)
 - futue work --> score based on ML model
@@ -54,8 +53,28 @@ The engine utilizes a dynamic thresholding model. Standard transactions float at
 
 **Alert Threshold:** Any transaction scoring `>= 0.75` is instantly blocked and triggers a CBSL Critical Alert.
 
----
+## NoSQL Design Justification
 
+This system leverages MongoDB's strengths:
+
+1. **Schema Flexibility**: Employee actions vary widely (LOGIN vs LOAN_APPROVAL). MongoDB stores heterogeneous events without predefined schemas.
+
+2. **Time-Series Optimization**: The aggregation pipeline enables sliding-window queries (e.g., "logins in last 5 minutes from this IP").
+
+3. **Document-Oriented Storage**: Nested transaction metadata (beneficiary, amount, customer) stored naturally as subdocuments.
+
+### Limitations Addressed:
+
+- **Weak ACID**: Multi-document transactions used for fraud injection (insert customer + insert action atomically)
+- **No JOINs**: Employee data denormalized into action documents for fast reads
+- **No Foreign Keys**: Application-level validation ensures customerId references exist
+
+### When NOT to Use NoSQL:
+
+This system is NOT suitable for:
+- Core banking ledgers (require ACID guarantees)
+- Complex multi-table reporting (SQL excels here)
+- Static, well-defined schemas (relational is simpler)
 ## How to Run the Live Simulation
 
 To properly demonstrate the real-time capabilities of this system, you must run it across three separate terminal windows.

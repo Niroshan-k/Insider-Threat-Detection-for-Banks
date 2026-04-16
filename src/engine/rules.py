@@ -1,5 +1,6 @@
 from datetime import datetime, timedelta
 import random
+from zoneinfo import ZoneInfo
 
 # rule 1 -> weekend and after-hours monitoring gap
 def check_after_hours(timestamp):
@@ -26,7 +27,8 @@ def check_credential_abuse(employee_id, ip_address, db):
     
     # detects if the same IP being used by multiple employee accounts simultaneously.
     # NDB : asst. manager used password of two other officers
-    five_mins_ago = datetime.utcnow() - timedelta(minutes=5)
+    IST = ZoneInfo("Asia/Colombo")
+    five_mins_ago = datetime.now(IST) - timedelta(minutes=5)
     concurrent_logins = db.employee_actions.count_documents({
         "location.ipAddress" : ip_address,
         "timestamp" : {"$gte" : five_mins_ago},
@@ -82,48 +84,54 @@ def check_ghost_account(customer_id, db):
 
 # main scoring function
 def evaluate_employee_action(action, db):
-    # ingests a signle employee action, run all rules, calculate risk
-    anomaly_flags = []
-    risk_score = random.uniform(0.05, 0.15)
+    try:
+        # ingests a signle employee action, run all rules, calculate risk
+        anomaly_flags = []
+        risk_score = random.uniform(0.05, 0.15)
 
-    # Safely extract variables to prevent crashes
-    timestamp = action.get("timestamp", datetime.utcnow())
-    ip_address = action.get("location", {}).get("ipAddress", "")
-    action_type = action.get("actionType", "")
+        # Safely extract variables to prevent crashes
+        timestamp = action.get("timestamp", datetime.utcnow())
+        ip_address = action.get("location", {}).get("ipAddress", "")
+        action_type = action.get("actionType", "")
 
-    if action_type in ["ELECTRONIC_TRANSFER", "LOAN_APPROVAL"] and "relatedTransaction" in action:
-        amount = action["relatedTransaction"].get("amount", 0)
-        # Scales risk smoothly based on amount (Max normal amount is 500,000)
-        risk_score += (amount / 500000) * 0.15
+        if action_type in ["ELECTRONIC_TRANSFER", "LOAN_APPROVAL"] and "relatedTransaction" in action:
+            amount = action["relatedTransaction"].get("amount", 0)
+            # Scales risk smoothly based on amount (Max normal amount is 500,000)
+            risk_score += (amount / 500000) * 0.15
 
-    time_flags = check_after_hours(timestamp)
-    if time_flags:
-        anomaly_flags.extend(time_flags)
-        risk_score += 0.3 * len(time_flags)
+        time_flags = check_after_hours(timestamp)
+        if time_flags:
+            anomaly_flags.extend(time_flags)
+            risk_score += 0.3 * len(time_flags)
 
-    cred_flags = check_credential_abuse(action["employeeId"], ip_address, db)
-    if cred_flags:
-        anomaly_flags.extend(cred_flags)
-        risk_score += 0.6 # big impact
+        cred_flags = check_credential_abuse(action["employeeId"], ip_address, db)
+        if cred_flags:
+            anomaly_flags.extend(cred_flags)
+            risk_score += 0.6 # big impact
 
-    if action_type == "ELECTRONIC_TRANSFER" and "relatedTransaction" in action:
-        txn = action["relatedTransaction"]
-        bene_name = txn.get("beneficiary", {}).get("name", "")
-        amount = txn.get("amount", 0)
+        if action_type == "ELECTRONIC_TRANSFER" and "relatedTransaction" in action:
+            txn = action["relatedTransaction"]
+            bene_name = txn.get("beneficiary", {}).get("name", "")
+            amount = txn.get("amount", 0)
 
-        bene_flags = check_suspicious_beneficiary(bene_name, amount, db)
-        if bene_flags:
-            anomaly_flags.extend(bene_flags)
-            risk_score += 0.4
+            bene_flags = check_suspicious_beneficiary(bene_name, amount, db)
+            if bene_flags:
+                anomaly_flags.extend(bene_flags)
+                risk_score += 0.4
+        
+        if action_type == "LOAN_APPROVAL" and "relatedTransaction" in action:
+            customer_id = action["relatedTransaction"].get("customerId", "")
+            ghost_flags = check_ghost_account(customer_id, db)
+            if ghost_flags:
+                anomaly_flags.extend(ghost_flags)
+                risk_score += 0.5
+        
+        # cap score at 1.0
+        risk_score = min(risk_score, 1.0)
+
+        return { "riskScore": round(risk_score, 2), "anomalyFlags": anomaly_flags, "isAlert": risk_score >= 0.75 }
     
-    if action_type == "LOAN_APPROVAL" and "relatedTransaction" in action:
-        customer_id = action["relatedTransaction"].get("customerId", "")
-        ghost_flags = check_ghost_account(customer_id, db)
-        if ghost_flags:
-            anomaly_flags.extend(ghost_flags)
-            risk_score += 0.5
-    
-    # cap score at 1.0
-    risk_score = min(risk_score, 1.0)
-
-    return { "riskScore": round(risk_score, 2), "anomalyFlags": anomaly_flags, "isAlert": risk_score >= 0.75 }
+    except Exception as e:
+        # Fail-safe: return low-risk if error occurs
+        print(f"⚠️ Error scoring action {action.get('actionId', 'UNKNOWN')}: {e}")
+        return {"riskScore": 0.10, "anomalyFlags": ["SCORING_ERROR"], "isAlert": False}
