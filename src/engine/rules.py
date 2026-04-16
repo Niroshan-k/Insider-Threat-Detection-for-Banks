@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta
+import random
 
 # rule 1 -> weekend and after-hours monitoring gap
 def check_after_hours(timestamp):
@@ -83,12 +84,17 @@ def check_ghost_account(customer_id, db):
 def evaluate_employee_action(action, db):
     # ingests a signle employee action, run all rules, calculate risk
     anomaly_flags = []
-    risk_score = 0.1 #base risk
+    risk_score = random.uniform(0.05, 0.15)
 
     # Safely extract variables to prevent crashes
     timestamp = action.get("timestamp", datetime.utcnow())
     ip_address = action.get("location", {}).get("ipAddress", "")
     action_type = action.get("actionType", "")
+
+    if action_type in ["ELECTRONIC_TRANSFER", "LOAN_APPROVAL"] and "relatedTransaction" in action:
+        amount = action["relatedTransaction"].get("amount", 0)
+        # Scales risk smoothly based on amount (Max normal amount is 500,000)
+        risk_score += (amount / 500000) * 0.15
 
     time_flags = check_after_hours(timestamp)
     if time_flags:

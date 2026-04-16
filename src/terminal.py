@@ -1,155 +1,270 @@
 import streamlit as st
 import pymongo
 import pandas as pd
-from datetime import datetime
+from datetime import datetime, timezone
 import time
 import sys
 import os
 import plotly.express as px
 
-# Ensure Python can find our engine module
+# --- IMPORT ENGINE ---
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 try:
     from src.engine.rules import evaluate_employee_action
 except ModuleNotFoundError:
-    st.error("⚠️ Could not import rules.py.")
+    st.error("⚠️ rules.py not found")
 
-# --- TERMINAL STYLING (Bloomberg Vibe) ---
-st.set_page_config(page_title="NDB SOC Terminal", layout="wide", initial_sidebar_state="collapsed")
+# --- PAGE CONFIG ---
+st.set_page_config(page_title="NDB SOC Terminal", layout="wide")
 
+# --- TERMINAL CSS (HARDCORE MODE) ---
 st.markdown("""
 <style>
-    /* Extreme Dark Mode */
-    .stApp { background-color: #050505; color: #e0e0e0; }
-    .block-container { padding-top: 1rem; padding-left: 1rem; padding-right: 1rem; max-width: 100%; }
-    
-    /* Global Monospace Font */
-    * { font-family: 'Courier New', Courier, monospace !important; }
-    
-    /* Terminal Dataframes */
-    [data-testid="stDataFrame"] { background-color: #0a0a0a; }
-    
-    /* Bloomberg Orange Headers */
-    h1, h2, h3, h4 { color: #ff9900 !important; margin-bottom: 0px !important; padding-bottom: 2px !important; }
-    
-    /* Style the bordered containers to look like terminal screens */
-    [data-testid="stVerticalBlockBorderWrapper"] {
-        border: 1px solid #333333 !important;
-        background-color: #0a0a0a !important;
+    .stApp {
+        background-color: #000000;
+        color: #00FF41;
+    }
+
+    .block-container {
+        padding: 0.2rem 0.5rem;
+        max-width: 100%;
+    }
+
+    * {
+        font-family: 'Courier New', monospace !important;
+        letter-spacing: 0.5px;
         border-radius: 0px !important;
+    }
+
+    h1, h2, h3 {
+        color: #FF9900 !important;
+        font-weight: bold;
+    }
+
+    /* Panels */
+    [data-testid="stVerticalBlockBorderWrapper"] {
+        border: 1px solid #222;
+        background-color: #050505;
+        padding: 4px;
+    }
+
+    /* Dataframe */
+    [data-testid="stDataFrame"] {
+        background-color: #000000;
+        border: 1px solid #111;
+    }
+            
+    /* Hide Streamlit top bar completely */
+    header {visibility: hidden;}
+    [data-testid="stToolbar"] {display: none;}
+    [data-testid="stDecoration"] {display: none;}
+    [data-testid="stStatusWidget"] {display: none;}
+
+    /* Remove top spacing */
+    .block-container {
+        padding-top: 0rem !important;
+        padding-bottom: 0.2rem;
+        padding-left: 0.5rem;
+        padding-right: 0.5rem;
     }
 </style>
 """, unsafe_allow_html=True)
 
+# --- DB CONNECTION ---
 @st.cache_resource
 def init_connection():
     return pymongo.MongoClient("mongodb://localhost:27017/")["ndb_insider_threat"]
 
 db = init_connection()
 
-st.title("SYS.TERMINAL // NDB INSIDER THREAT OPS")
-st.caption(f"LIVE FEED ACTIVE | SYS.TIME: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')} | CBSL COMPLIANT")
+# --- HEADER ---
+st.markdown("## TERMINAL")
+now_utc = datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')
+st.caption(f"SYSTEM_TIME::{now_utc} UTC | STATUS::ACTIVE")
 
-# --- FETCH & SCORE DATA ---
-# Increased limit to 150 so alerts stay on screen longer
+# --- FETCH DATA ---
 recent_actions = list(db.employee_actions.find().sort("timestamp", -1).limit(150))
-scored_data, alerts = [], []
+
+scored_data = []
+alerts = []
 
 for action in recent_actions:
     score = evaluate_employee_action(action, db)
+    risk_val = score["riskScore"]
+
+    # FIX: 3-Tier Risk Logic
+    if score["isAlert"]:
+        status_label = "BLOCKED"
+    elif risk_val > 0.5:
+        status_label = "WARNING"
+    else:
+        status_label = "NORMAL"
+
     row = {
         "TIME": action.get("timestamp"),
-        "EMP_ID": action.get("employeeId"),
+        "EMP": action.get("employeeId"),
         "TYPE": action.get("actionType"),
         "IP": action.get("location", {}).get("ipAddress", "N/A"),
-        "RISK": score["riskScore"],
-        "STATUS": "BLOCKED" if score["isAlert"] else "NORMAL"
+        "RISK": risk_val,
+        "STATUS": status_label
     }
+
     scored_data.append(row)
+
     if score["isAlert"]:
-        alerts.append({"TIME": action.get("timestamp").strftime("%H:%M:%S"), "EMP_ID": row["EMP_ID"], "FLAGS": ", ".join(score["anomalyFlags"])})
+        alerts.append({
+            "TIME": action.get("timestamp").strftime("%H:%M:%S"),
+            "EMP": row["EMP"],
+            "FLAGS": ", ".join(score["anomalyFlags"])
+        })
 
 df = pd.DataFrame(scored_data)
 
-# --- TOP ROW: METRICS PANELS ---
+# --- METRICS ---
 with st.container(border=True):
     m1, m2, m3, m4 = st.columns(4)
-    m1.metric("DB.LATENCY", "1.1ms", "-0.2ms")
-    m2.metric("MSG.RATE", "Active", "OK")
-    m3.metric("EVENTS.IN.MEMORY", str(len(df)), "OK")
-    m4.metric("CRITICAL.ALERTS", str(len(alerts)), f"+{len(alerts)}" if alerts else "0", delta_color="inverse")
+    m1.metric("DB_LATENCY", "1.1ms")
+    m2.metric("STREAM_STATUS", "ACTIVE")
+    m3.metric("EVENT_BUFFER", str(len(df)))
+    m4.metric("ALERT_COUNT", str(len(alerts)))
 
-# --- MIDDLE ROW: CHARTS ---
-col_main_chart, col_side_chart = st.columns([7, 3])
+# --- CHARTS ---
+col1, col2 = st.columns([7, 3])
 
-with col_main_chart:
+with col1:
     with st.container(border=True):
-        st.subheader("▶ RISK VOLATILITY (TRADING VIEW)")
-        if not df.empty:
-            # FIX: Create a string version of the time for categorical X-axis
-            df['CHART_TIME'] = df['TIME'].dt.strftime("%H:%M:%S")
-            
-            # Replaced x="TIME" with x="CHART_TIME"
-            fig_bar = px.bar(
-                df, x="CHART_TIME", y="RISK", color="STATUS",
-                color_discrete_map={"NORMAL": "#00cc66", "BLOCKED": "#ff3333"},
-                template="plotly_dark", height=280
-            )
-            fig_bar.update_layout(
-                margin=dict(l=0, r=0, t=10, b=0), 
-                plot_bgcolor="#0a0a0a", paper_bgcolor="#0a0a0a",
-                bargap=0.1 # Tightly packed bars
-            )
-            fig_bar.add_hline(y=0.75, line_dash="dash", line_color="#ff9900", annotation_text="CBSL ALERT LIMIT (0.75)")
-            
-            # Force the X-axis to treat time as distinct categories, not a continuous timeline
-            fig_bar.update_xaxes(title_text="", showgrid=False, type='category')
-            fig_bar.update_yaxes(title_text="RISK SCORE", showgrid=True, gridcolor="#222", range=[0, 1.1])
-            
-            st.plotly_chart(fig_bar, use_container_width=True)
-
-with col_side_chart:
-    with st.container(border=True):
-        st.subheader("▶ EVENT DISTRIBUTION")
-        if not df.empty:
-            # Added a Donut Chart for situational awareness
-            action_counts = df['TYPE'].value_counts().reset_index()
-            action_counts.columns = ['TYPE', 'COUNT']
-            fig_pie = px.pie(
-                action_counts, values='COUNT', names='TYPE', hole=0.6,
-                template="plotly_dark", height=280
-            )
-            fig_pie.update_layout(
-                margin=dict(l=0, r=0, t=10, b=0),
-                plot_bgcolor="#0a0a0a", paper_bgcolor="#0a0a0a",
-                showlegend=False
-            )
-            fig_pie.update_traces(textposition='inside', textinfo='label+percent')
-            st.plotly_chart(fig_pie, use_container_width=True)
-
-# --- BOTTOM ROW: TERMINAL FEEDS ---
-col_feed, col_alerts = st.columns([7, 3])
-
-with col_feed:
-    with st.container(border=True):
-        st.subheader("▶ RAW TRANSACTION STREAM")
-        df['TIME'] = df['TIME'].dt.strftime("%H:%M:%S")
-        def highlight_terminal(row):
-            if row['STATUS'] == 'BLOCKED': return ['background-color: #4a0000; color: #ff4444; font-weight: bold'] * len(row)
-            return ['color: #00cc66'] * len(row)
+        st.markdown("### RISK_STREAM::VOLATILITY_INDEX")
 
         if not df.empty:
-            st.dataframe(df.style.apply(highlight_terminal, axis=1), use_container_width=True, height=300)
+            df['TIME'] = pd.to_datetime(df['TIME'], utc=True)
+            df_chart = df.iloc[::-1].copy()
 
-with col_alerts:
+            df_chart['CHART_TIME'] = df_chart['TIME'].dt.strftime("%H:%M:%S.%f").str[:-4]
+
+            fig = px.bar(
+                df_chart,
+                x="CHART_TIME",
+                y="RISK",
+                color="STATUS",
+                # FIX: Added the YELLOW color mapping for the WARNING tier
+                color_discrete_map={
+                    "NORMAL": "#00FF41",
+                    "WARNING": "#FFD700", 
+                    "BLOCKED": "#FF3333"
+                },
+                template="plotly_dark",
+                height=260
+            )
+
+            fig.update_layout(
+                barmode="overlay",
+                showlegend=False,
+                font=dict(size=10, color="#00FF41"),
+                margin=dict(l=0, r=0, t=5, b=0),
+                plot_bgcolor="#000000",
+                paper_bgcolor="#000000"
+            )
+
+            fig.update_traces(marker_line_width=0)
+            
+            fig.update_xaxes(
+                type='category', 
+                categoryorder='array', 
+                categoryarray=df_chart['CHART_TIME'], 
+                showticklabels=False
+            )
+            fig.update_yaxes(range=[0, 1.1])
+
+            fig.add_hline(y=0.75, line_dash="dash", line_color="#FF9900")
+
+            st.plotly_chart(fig, use_container_width=True)
+
+with col2:
     with st.container(border=True):
-        st.subheader("▶ CRITICAL ALERT LOG")
+        st.markdown("### EVENT_DIST::BREAKDOWN")
+
+        if not df.empty:
+            counts = df['TYPE'].value_counts().reset_index()
+            counts.columns = ['TYPE', 'COUNT']
+
+            fig2 = px.pie(
+                counts,
+                values='COUNT',
+                names='TYPE',
+                hole=0.6,
+                template="plotly_dark",
+                height=260
+            )
+
+            fig2.update_layout(
+                showlegend=False,
+                font=dict(size=10, color="#00FF41"),
+                margin=dict(l=0, r=0, t=5, b=0),
+                plot_bgcolor="#000000",
+                paper_bgcolor="#000000"
+            )
+
+            fig2.update_traces(textposition='inside', textinfo='label+percent')
+            st.plotly_chart(fig2, use_container_width=True)
+
+# --- TABLE + ALERTS ---
+col3, col4 = st.columns([7, 3])
+
+# FIX: Added Yellow highlighting logic for the table rows
+def highlight(row):
+    if row['STATUS'] == 'BLOCKED':
+        return ['background-color:#220000; color:#FF4444; font-weight:bold'] * len(row)
+    elif row['STATUS'] == 'WARNING':
+        return ['background-color:#222200; color:#FFD700; font-weight:bold'] * len(row)
+    return ['color:#00FF41'] * len(row)
+
+with col3:
+    with st.container(border=True):
+        st.markdown("### TXN_FEED::LIVE_BUFFER")
+
+        if not df.empty:
+            df['TIME'] = df['TIME'].dt.strftime("%H:%M:%S")
+            st.dataframe(df.style.apply(highlight, axis=1),
+                         use_container_width=True,
+                         height=300)
+
+with col4:
+    with st.container(border=True):
+        st.markdown("### ALERT_FEED::CRITICAL")
+
         if alerts:
-            for alert in alerts[:6]: # Show top 6
-                st.error(f"[{alert['TIME']}] {alert['EMP_ID']}\n\n>> {alert['FLAGS']}")
+            for alert in alerts[:6]:
+                st.markdown(f"""
+                <div style="
+                    background-color:#330000;
+                    color:#FF3333;
+                    padding:6px;
+                    border-left:4px solid #FF0000;
+                    font-size:12px;
+                ">
+                [{alert['TIME']}] EMP::{alert['EMP']} <br>
+                >> {alert['FLAGS']}
+                </div>
+                """, unsafe_allow_html=True)
         else:
-            st.success(">> NO CRITICAL ALERTS DETECTED.")
+            st.markdown(">> NO CRITICAL EVENTS")
 
-# The heartbeat
+# --- SYSTEM LOG ---
+with st.container(border=True):
+    st.markdown("### SYS_LOG::EVENT_STREAM")
+
+    for row in scored_data[:10]:
+        st.text(
+            f"[{row['TIME']}] EVT::{row['TYPE']} | EMP::{row['EMP']} | RISK::{row['RISK']:.2f}"
+        )
+
+# --- TERMINAL FOOTER ---
+st.markdown("""
+<div style="color:#00FF41;">
+&gt; SYSTEM ACTIVE _
+</div>
+""", unsafe_allow_html=True)
+
+# --- REFRESH LOOP ---
 time.sleep(2)
 st.rerun()
