@@ -1,22 +1,24 @@
-# 🛡️ SYS.TERMINAL // NDB Insider Threat Operations Center
+# Insider Threat Operations Center [Banks]
 
-![Status](https://img.shields.io/badge/Status-ACTIVE-00FF41?style=for-the-badge&logo=mongodb&logoColor=white)
-![Compliance](https://img.shields.io/badge/CBSL-COMPLIANT-FF9900?style=for-the-badge)
-![Tech Stack](https://img.shields.io/badge/Stack-Python_|_Streamlit_|_NoSQL-333333?style=for-the-badge)
+![Python](https://img.shields.io/badge/Python-3776AB?style=for-the-badge&logo=python&logoColor=white)
+![Streamlit](https://img.shields.io/badge/Streamlit-FF4B4B?style=for-the-badge&logo=streamlit&logoColor=white)
+![MongoDB](https://img.shields.io/badge/MongoDB-4EA94B?style=for-the-badge&logo=mongodb&logoColor=white)
+![Pandas](https://img.shields.io/badge/Pandas-150458?style=for-the-badge&logo=pandas&logoColor=white)
+![Plotly](https://img.shields.io/badge/Plotly-3F4F75?style=for-the-badge&logo=plotly&logoColor=white)
 
-## 📖 The Problem: The "Needle in a Haystack"
+## The Problem: The "Needle in a Haystack"
 Modern financial institutions process thousands of transactions per minute. Traditional relational databases and static rule sets fail to catch complex, multi-step insider threats in real-time. 
 
 In the infamous **NDB Rs. 13.2 Billion Heist**, attackers utilized a combination of **credential theft**, **unverified ghost accounts**, and **after-hours crypto transfers**. By the time the standard auditing systems flagged the anomaly, the money was gone. Furthermore, Central Bank of Sri Lanka (CBSL) mandates require critical breaches to be reported within 2 hours.
 
-## 🚀 The Solution
+## The Solution
 This project is an **Enterprise-Grade NoSQL Anomaly Engine** and **Live SOC Terminal**. Instead of relying on static daily audits, it uses a live data-streaming architecture to evaluate employee actions on the fly. 
 
 By analyzing the *context* of a transaction (Time, IP Address, Historical Behavior, and Beneficiary Novelty), the NoSQL engine instantly scores the risk of an action. It filters out natural network "noise" and instantly flags high-risk combo-attacks.
 
----
 
-## 🏗️ System Architecture
+
+## System Architecture
 
 This project is divided into three distinct operational domains:
 
@@ -41,7 +43,9 @@ A separate, offensive cybersecurity console used to execute combination strikes 
 
 ---
 
-## ⚙️ The Scoring Engine (src/engine/rules.py)
+## The Scoring Engine (src/engine/rules.py)
+- futue work --> score based on ML model
+
 The engine utilizes a dynamic thresholding model. Standard transactions float at a base score of ~0.1. Penalties are compounded based on anomaly combinations:
 * `+0.6`: Credential Abuse / Impossible Travel (Same IP, Multiple Accounts)
 * `+0.4`: New / Unverified Beneficiary (e.g., Unregistered Crypto Exchange)
@@ -52,7 +56,7 @@ The engine utilizes a dynamic thresholding model. Standard transactions float at
 
 ---
 
-## 🎬 How to Run the Live Simulation (Viva Guide)
+## How to Run the Live Simulation
 
 To properly demonstrate the real-time capabilities of this system, you must run it across three separate terminal windows.
 
@@ -71,12 +75,6 @@ Open **Terminal 2** and start the Bloomberg Terminal:
 ### Step 3: Launch the Red Team Console
 Open **Terminal 3** and start the attack injector:
 `> streamlit run src/injector.py --server.port 8502`
-
-### The Demonstration:
-1. Show the examiner the **SOC Terminal**. Explain the natural jitter and the baseline risk hovering in the green zone.
-2. Move to the **Red Team Console**. Explain the combo payload (Credential Theft + Crypto Transfer).
-3. Click **EXECUTE COMBO STRIKE**.
-4. Immediately switch back to the **SOC Terminal** to watch the NoSQL engine instantly catch the combination attack, spike a 1.0 Red Alert, and isolate the compromised employee ID.
 
 ---
 *Developed for Advanced Database Systems & Cybersecurity Defense.*
