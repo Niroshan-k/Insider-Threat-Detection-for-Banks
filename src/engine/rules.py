@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import random
 from zoneinfo import ZoneInfo
 
@@ -7,6 +7,11 @@ def check_after_hours(timestamp):
     # ensure timestamp is a datetime object
     if isinstance(timestamp, str):
         timestamp = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
+
+    # Pymongo returns naive UTC datetimes, we must convert it to Colombo time before checking the hour
+    if timestamp.tzinfo is None:
+        timestamp = timestamp.replace(tzinfo=timezone.utc)
+    timestamp = timestamp.astimezone(ZoneInfo("Asia/Colombo"))
 
     # flags activity occuring outside 8-5/ weekends. 
     # NDB bank faliure : monitoring was weaker during weekends
@@ -22,16 +27,20 @@ def check_after_hours(timestamp):
     return flags
 
 #rule 2 -> credential abuse & password theft
-def check_credential_abuse(employee_id, ip_address, db):
+def check_credential_abuse(employee_id, ip_address, timestamp, db):
     if not ip_address: return []
     
     # detects if the same IP being used by multiple employee accounts simultaneously.
     # NDB : asst. manager used password of two other officers
-    IST = ZoneInfo("Asia/Colombo")
-    five_mins_ago = datetime.now(IST) - timedelta(minutes=5)
+    
+    # FIX: Check historically based on the action's timestamp, NOT the server's real-time now()
+    if timestamp.tzinfo is None:
+        timestamp = timestamp.replace(tzinfo=timezone.utc)
+    
+    five_mins_ago = timestamp - timedelta(minutes=5)
     concurrent_logins = db.employee_actions.count_documents({
         "location.ipAddress" : ip_address,
-        "timestamp" : {"$gte" : five_mins_ago},
+        "timestamp" : {"$gte" : five_mins_ago, "$lte": timestamp},
         "employeeId" : {"$ne" : employee_id}
     })
 
@@ -104,7 +113,7 @@ def evaluate_employee_action(action, db):
             anomaly_flags.extend(time_flags)
             risk_score += 0.3 * len(time_flags)
 
-        cred_flags = check_credential_abuse(action["employeeId"], ip_address, db)
+        cred_flags = check_credential_abuse(action["employeeId"], ip_address, timestamp, db)
         if cred_flags:
             anomaly_flags.extend(cred_flags)
             risk_score += 0.6 # big impact

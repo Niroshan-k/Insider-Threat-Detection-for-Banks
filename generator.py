@@ -40,9 +40,9 @@ def generate_simulation_data():
     db.employees.insert_many(employees)
 
     print("👥 Onboarding 500 normal customers...")
-    # FIX: Use Timezone Aware UTC
+    # FIX: Use Timezone Aware UTC and truncate to midnight to avoid adding hours on top of hours
     IST = ZoneInfo("Asia/Colombo")
-    base_time = datetime.now(IST)
+    base_time = datetime.now(IST).replace(hour=0, minute=0, second=0, microsecond=0)
     start_of_week = base_time - timedelta(days=base_time.weekday() + 7) 
     
     customers = []
@@ -66,13 +66,10 @@ def generate_simulation_data():
     print("⏳ Simulating 7 days of normal bank traffic...")
     actions = []
     for _ in range(2000):
-        if random.random() < 0.90:
-            random_day = start_of_week + timedelta(days=random.randint(0, 4)) 
-            random_time = random_day + timedelta(hours=random.randint(8, 16), minutes=random.randint(0, 59))
-        else:
-            random_day = start_of_week + timedelta(days=random.randint(0, 6))
-            random_time = random_day + timedelta(hours=random.randint(0, 23), minutes=random.randint(0, 59))
-            
+        # Always generate normal traffic: Weekdays (0-4) and Business Hours (8-16)
+        random_day = start_of_week + timedelta(days=random.randint(0, 4)) 
+        random_time = random_day + timedelta(hours=random.randint(8, 16), minutes=random.randint(0, 59))
+        
         emp = random.choice(employees)
         action_type = random.choice(["CUSTOMER_QUERY", "ACCOUNT_VIEW", "LOGIN", "LOAN_APPROVAL", "ELECTRONIC_TRANSFER"])
         
@@ -93,21 +90,6 @@ def generate_simulation_data():
                 "beneficiary": {"name": fake.company()}
             }
         actions.append(action)
-
-    # --- 3. INJECT THE NEEDLE ---
-    print("💉 Injecting the historical NDB fraud sequence...")
-    saturday_night = start_of_week + timedelta(days=5, hours=23, minutes=15) 
-    hacker_ip = "10.0.0.99"
-
-    fraud_sequence = [
-        {"actionId": f"ACT_{uuid.uuid4().hex[:8]}", "employeeId": saman_id, "actionType": "LOGIN", "timestamp": saturday_night, "location": {"ipAddress": hacker_ip, "branch": "REMOTE_VPN"}},
-        {"actionId": f"ACT_{uuid.uuid4().hex[:8]}", "employeeId": kamal_id, "actionType": "LOGIN", "timestamp": saturday_night + timedelta(minutes=2), "location": {"ipAddress": hacker_ip, "branch": "REMOTE_VPN"}},
-        {"actionId": f"ACT_{uuid.uuid4().hex[:8]}", "employeeId": saman_id, "actionType": "LOAN_APPROVAL", "timestamp": saturday_night + timedelta(minutes=10), "location": {"ipAddress": hacker_ip, "branch": "REMOTE_VPN"},
-         "relatedTransaction": {"transactionId": "TXN_LOAN_55", "amount": 50000000, "customerId": ghost_id}},
-        {"actionId": f"ACT_{uuid.uuid4().hex[:8]}", "employeeId": saman_id, "actionType": "ELECTRONIC_TRANSFER", "timestamp": saturday_night + timedelta(minutes=15), "location": {"ipAddress": hacker_ip, "branch": "REMOTE_VPN"},
-         "relatedTransaction": {"transactionId": "TXN_CRYPTO_99", "amount": 15000000, "currency": "LKR", "beneficiary": {"name": "Buy Today Crypto Exchange", "accountNumber": "000999888"}}}
-    ]
-    actions.extend(fraud_sequence)
 
     actions.sort(key=lambda x: x["timestamp"])
     db.employee_actions.insert_many(actions)

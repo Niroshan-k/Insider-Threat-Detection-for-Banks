@@ -31,7 +31,12 @@ def pump_live_data():
     try:
         while True:
             IST = ZoneInfo("Asia/Colombo")
-            now = datetime.now(IST)
+            # Force the timestamp to always be a typical working hour
+            # keep natural minutes and seconds advancing so the chart flows nicely horizontally!
+            base_now = datetime.now(IST)
+            now = base_now.replace(hour=14) # Locks time to 2:00 PM
+            if now.weekday() >= 5: 
+                now -= timedelta(days=now.weekday() - 2) # move to Wednesday
             
             action_type = random.choice(actions)
             emp_id = random.choice(emp_ids)
